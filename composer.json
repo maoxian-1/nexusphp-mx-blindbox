@@ -1,5 +1,5 @@
 {
-    "name": "nexusphp/blindbox",
+    "name": "maoxian/nexusphp-mx-blindbox",
     "description": "Blind box lottery plugin for NexusPHP",
     "type": "library",
     "version": "1.0.0",
