@@ -25,4 +25,4 @@ if [ -L "$PLUGIN_LINK" ]; then
 fi
 
 echo "Creating plugin symlink..."
-ln -sf "$PLUGIN_DIR" "$PLUGIN_LINK/public"
+ln -sf "$PLUGIN_DIR/public" "$PLUGIN_LINK"
