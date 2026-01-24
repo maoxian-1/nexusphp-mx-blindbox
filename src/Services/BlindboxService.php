@@ -8,6 +8,7 @@ use App\Models\Message;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use NexusPlugin\Blindbox\Models\BlindboxPrize;
 
 class BlindboxService
 {
@@ -46,11 +47,17 @@ class BlindboxService
                 throw new \Exception('抽奖失败');
             }
 
-            // 发放奖品
-            $this->givePrize($user, $prize);
+            // 获取奖品模型以使用随机值功能
+            $prizeModel = BlindboxPrize::find($prize->id);
+            
+            // 计算实际奖励值（支持随机范围）
+            $actualValue = $prizeModel ? $prizeModel->getActualValue() : (int) $prize->value;
 
-            // 记录抽奖历史
-            $this->recordHistory($userId, $prize, $isFree, $cost);
+            // 发放奖品（传入实际值）
+            $this->givePrize($user, $prize, $actualValue);
+
+            // 记录抽奖历史（使用实际值）
+            $this->recordHistory($userId, $prize, $isFree, $cost, $actualValue);
 
             // 更新奖品发放统计
             $this->updatePrizeStatistics($prize->id);
@@ -63,7 +70,7 @@ class BlindboxService
                     'name' => $prize->name,
                     'description' => $prize->description,
                     'type' => $prize->type,
-                    'value' => $prize->value
+                    'value' => $this->formatPrizeValue($prize->type, $actualValue)
                 ]
             ];
         } catch (\Exception $e) {
@@ -74,6 +81,21 @@ class BlindboxService
                 'message' => $e->getMessage()
             ];
         }
+    }
+
+    /**
+     * 格式化奖品值显示
+     */
+    private function formatPrizeValue($type, $value): string
+    {
+        return match($type) {
+            'bonus' => $value . ' 魔力值',
+            'upload' => number_format($value / 1073741824, 2) . ' GB 上传量',
+            'vip_days' => $value . ' 天VIP',
+            'invite' => $value . ' 个邀请',
+            'rainbow_id' => $value . ' 天彩虹ID',
+            default => (string) $value
+        };
     }
 
     /**
@@ -137,36 +159,42 @@ class BlindboxService
 
     /**
      * 发放奖品
+     * @param $user 用户对象
+     * @param $prize 奖品对象
+     * @param int|null $actualValue 实际奖励值（用于随机奖励）
      */
-    private function givePrize($user, $prize)
+    private function givePrize($user, $prize, $actualValue = null)
     {
+        // 使用传入的实际值，或者使用奖品默认值
+        $value = $actualValue ?? (int) $prize->value;
+
         switch ($prize->type) {
             case 'bonus':
                 // 发放魔力值
-                $user->seedbonus += $prize->value;
+                $user->seedbonus += $value;
                 $user->save();
-                $this->sendNotification($user->id, "恭喜您获得 {$prize->value} 魔力值！");
+                $this->sendNotification($user->id, "恭喜您获得 {$value} 魔力值！");
                 break;
                 
             case 'upload':
                 // 发放上传量
-                $user->uploaded += $prize->value;
+                $user->uploaded += $value;
                 $user->save();
-                $uploadGB = number_format($prize->value / 1073741824, 2);
+                $uploadGB = number_format($value / 1073741824, 2);
                 $this->sendNotification($user->id, "恭喜您获得 {$uploadGB}GB 上传量！");
                 break;
                 
             case 'vip_days':
                 // 发放VIP天数
-                $this->giveVipDays($user, $prize->value);
-                $this->sendNotification($user->id, "恭喜您获得 {$prize->value} 天VIP会员！");
+                $this->giveVipDays($user, $value);
+                $this->sendNotification($user->id, "恭喜您获得 {$value} 天VIP会员！");
                 break;
                 
             case 'invite':
                 // 发放邀请名额
-                $user->invites += $prize->value;
+                $user->invites += $value;
                 $user->save();
-                $this->sendNotification($user->id, "恭喜您获得 {$prize->value} 个邀请名额！");
+                $this->sendNotification($user->id, "恭喜您获得 {$value} 个邀请名额！");
                 break;
                 
             case 'medal':
@@ -194,10 +222,12 @@ class BlindboxService
                 
             case 'rainbow_id':
                 // 发放彩虹ID
-                $this->giveRainbowId($user, $prize->rainbow_days ?: $prize->value);
-                $days = $prize->rainbow_days ?: $prize->value;
+                $days = $prize->rainbow_days ?: $value;
+                $this->giveRainbowId($user, $days);
                 $this->sendNotification($user->id, "恭喜您获得 {$days} 天彩虹ID特权！");
                 break;
+        }
+    }
         }
     }
 
@@ -263,15 +293,20 @@ class BlindboxService
 
     /**
      * 记录抽奖历史
+     * @param int $userId
+     * @param object $prize
+     * @param bool $isFree
+     * @param int $cost
+     * @param int|null $actualValue 实际奖励值
      */
-    private function recordHistory($userId, $prize, $isFree, $cost)
+    private function recordHistory($userId, $prize, $isFree, $cost, $actualValue = null)
     {
         DB::table('plugin_blindbox_history')->insert([
             'user_id' => $userId,
             'prize_id' => $prize->id,
             'prize_name' => $prize->name,
             'prize_type' => $prize->type,
-            'prize_value' => $prize->value,
+            'prize_value' => $actualValue ?? $prize->value,
             'is_free' => $isFree,
             'cost' => $cost,
             'ip' => request()->ip(),

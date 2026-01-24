@@ -16,6 +16,9 @@ return [
     'network_error' => 'Network error, please retry',
     'drawing' => 'Drawing...',
     'please_login' => 'Please login first',
+    'try_again' => 'Try Again',
+    'login_to_participate' => 'Login to Participate',
+    'try_your_luck' => 'Try your luck and win great rewards',
     
     // Prize types
     'prize_types' => [
@@ -25,6 +28,17 @@ return [
         'invite' => 'Invites',
         'medal' => 'Medal',
         'rainbow_id' => 'Rainbow ID',
+    ],
+    
+    // Random rewards
+    'random' => [
+        'range' => 'Range',
+        'min_value' => 'Minimum Value',
+        'max_value' => 'Maximum Value',
+        'random_mode' => 'Random Range Mode',
+        'fixed_mode' => 'Fixed Value Mode',
+        'random_hint' => 'When min and max values are set, each draw will generate a random value within the range',
+        'only_bonus_upload' => 'Only applies to Bonus and Upload types',
     ],
     
     // Notifications
@@ -45,5 +59,16 @@ return [
         'history' => 'Draw History',
         'settings' => 'Blind Box Settings',
         'statistics' => 'Statistics',
+        'global_settings' => 'Global Settings',
+        'reset_daily' => 'Reset Daily Stats',
+        'add_prize' => 'Add Prize',
+        'enabled' => 'Enable Blind Box',
+        'daily_free_enabled' => 'Enable Daily Free Draw',
+        'show_on_torrent' => 'Show on Torrent List Page',
+        'total_draws' => 'Total Draws',
+        'today_draws' => 'Today Draws',
+        'participated_users' => 'Participated Users',
+        'active_prizes' => 'Active Prizes',
+        'probability_sum' => 'Probability Sum',
     ],
 ];

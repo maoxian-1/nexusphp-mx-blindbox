@@ -17,8 +17,8 @@ class CreateBlindboxPrizesTable extends Migration
             $table->id();
             $table->string('name')->comment('奖品名称');
             $table->text('description')->nullable()->comment('奖品描述');
-            $table->enum('type', ['bonus', 'upload', 'vip_days', 'invite', 'medal', 'rainbow_id'])
-                ->comment('奖品类型：魔力值、上传量、VIP天数、邀请名额、勋章、彩虹ID');
+            $table->enum('type', ['bonus', 'upload', 'vip_days', 'invite', 'medal', 'rainbow_id', 'attendance_card'])
+                ->comment('奖品类型：魔力值、上传量、VIP天数、邀请名额、勋章、彩虹ID、补签卡');
             $table->decimal('value', 20, 2)->default(0)->comment('奖品数值');
             $table->string('medal_id')->nullable()->comment('勋章ID(如果是勋章类型)');
             $table->decimal('medal_bonus', 10, 2)->default(100)->comment('已有勋章转换魔力值（当type为medal时）');

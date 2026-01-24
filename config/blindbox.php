@@ -13,42 +13,55 @@ return [
     // 每日免费抽奖次数
     'daily_free_times' => 1,
 
+    // 是否在种子详情页显示盲盒
+    'show_on_torrent' => false,
+
     // 默认奖品配置
     'default_prizes' => [
         [
-            'name' => '少量魔力值',
+            'name' => '随机少量魔力值',
             'type' => 'bonus',
             'value' => 50,
+            'value_min' => 10,
+            'value_max' => 100,
             'probability' => 30,
-            'description' => '获得50魔力值'
+            'description' => '获得10-100随机魔力值'
         ],
         [
-            'name' => '中量魔力值',
+            'name' => '随机中量魔力值',
             'type' => 'bonus',
-            'value' => 100,
-            'probability' => 20,
-            'description' => '获得100魔力值'
+            'value' => 200,
+            'value_min' => 100,
+            'value_max' => 300,
+            'probability' => 15,
+            'description' => '获得100-300随机魔力值'
         ],
         [
-            'name' => '大量魔力值',
+            'name' => '随机大量魔力值',
             'type' => 'bonus',
             'value' => 500,
+            'value_min' => 300,
+            'value_max' => 800,
             'probability' => 5,
-            'description' => '获得500魔力值'
+            'description' => '获得300-800随机魔力值'
         ],
         [
-            'name' => '1GB上传量',
+            'name' => '随机上传量',
             'type' => 'upload',
             'value' => 1073741824, // 1GB in bytes
-            'probability' => 15,
-            'description' => '获得1GB上传量'
+            'value_min' => 536870912,  // 0.5GB
+            'value_max' => 2147483648, // 2GB
+            'probability' => 20,
+            'description' => '获得0.5-2GB随机上传量'
         ],
         [
-            'name' => '5GB上传量',
+            'name' => '大量上传量',
             'type' => 'upload',
             'value' => 5368709120, // 5GB in bytes
-            'probability' => 10,
-            'description' => '获得5GB上传量'
+            'value_min' => 3221225472,  // 3GB
+            'value_max' => 10737418240, // 10GB
+            'probability' => 8,
+            'description' => '获得3-10GB随机上传量'
         ],
         [
             'name' => 'VIP 1天',
@@ -68,14 +81,14 @@ return [
             'name' => '临时邀请名额',
             'type' => 'invite',
             'value' => 1,
-            'probability' => 3,
+            'probability' => 4,
             'description' => '获得1个临时邀请名额'
         ],
         [
             'name' => '彩虹ID 7天',
             'type' => 'rainbow_id',
             'value' => 7,
-            'probability' => 2,
+            'probability' => 3,
             'description' => '获得7天彩虹ID特权'
         ]
     ]
