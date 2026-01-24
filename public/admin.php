@@ -961,13 +961,13 @@ function pagination($current_page, $total_pages, $base_url, $params = []) {
                     <td><?php echo $prize['given_today']; ?></td>
                     <td>
                         <?php if ($prize['is_active']): ?>
-                            <span style="color: #28a745;">✓ 启用</span>
+                            <span style="color: #667eea; padding: 2px 5px; background: #e0e7ff; border-radius: 20px; border: 1px solid #667eea;">✓ 启用</span>
                         <?php else: ?>
-                            <span style="color: #dc3545;">✗ 禁用</span>
+                            <span style="color: #dc3545; padding: 2px 5px; background: #ffe0e0; border-radius: 20px; border: 1px solid #dc3545;">✗ 禁用</span>
                         <?php endif; ?>
                     </td>
                     <td>
-                        <button type="button" class="btn btn-edit" onclick="openEditModal(<?php echo $prize['id']; ?>)">编辑</button>
+                        <button type="button" class="btn btn-primary" onclick="openEditModal(<?php echo $prize['id']; ?>)">编辑</button>
                         <form method="POST" style="display: inline;">
                             <input type="hidden" name="action" value="delete_prize">
                             <input type="hidden" name="prize_id" value="<?php echo $prize['id']; ?>">

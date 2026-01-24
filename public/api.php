@@ -247,7 +247,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'draw') {
 // 获取历史记录
 if ($action === 'history') {
     $history = [];
-    $res = sql_query("SELECT * FROM plugin_blindbox_history WHERE user_id = " . $CURUSER['id'] . " ORDER BY created_at DESC LIMIT 10");
+    $res = sql_query("SELECT * FROM plugin_blindbox_history WHERE user_id = " . $CURUSER['id'] . " ORDER BY created_at DESC LIMIT 50");
     while ($row = mysql_fetch_assoc($res)) {
         // 格式化显示的数值
         $displayValue = $row['prize_value'];
@@ -258,9 +258,13 @@ if ($action === 'history') {
         } elseif ($row['prize_type'] === 'rainbow_id') {
             $displayValue = $row['prize_value'] . ' 天彩虹ID';
         } elseif ($row['prize_type'] === 'bonus') {
-            $displayValue = $row['prize_value'] . ' 魔力值';
+            $displayValue = number_format($row['prize_value']) . ' 魔力值';
         } elseif ($row['prize_type'] === 'invite') {
             $displayValue = $row['prize_value'] . ' 个邀请名额';
+        } elseif ($row['prize_type'] === 'medal') {
+            $displayValue = '勋章';
+        } elseif ($row['prize_type'] === 'attendance_card') {
+            $displayValue = $row['prize_value'] . ' 张补签卡';
         }
 
         $history[] = [
