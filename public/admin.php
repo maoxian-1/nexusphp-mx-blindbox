@@ -8,9 +8,58 @@ if (get_user_class() < UC_ADMINISTRATOR) {
     permissiondenied();
 }
 
+function build_safe_return_url($candidate, $fallbackPath) {
+    if (!is_string($candidate) || $candidate === '') {
+        return $fallbackPath;
+    }
+
+    $parts = parse_url($candidate);
+    if ($parts === false) {
+        return $fallbackPath;
+    }
+
+    $path = $parts['path'] ?? '';
+    if ($path !== $fallbackPath) {
+        return $fallbackPath;
+    }
+
+    $url = $path;
+    if (!empty($parts['query'])) {
+        $url .= '?' . $parts['query'];
+    }
+
+    return $url;
+}
+
+function is_ajax_request() {
+    if (isset($_POST['ajax']) && $_POST['ajax'] === '1') {
+        return true;
+    }
+
+    $requestedWith = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '');
+    if ($requestedWith === 'xmlhttprequest') {
+        return true;
+    }
+
+    $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+    return stripos($accept, 'application/json') !== false;
+}
+
+function send_json_response($payload, $statusCode = 200) {
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=UTF-8', true, $statusCode);
+    }
+
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+$currentRequestUrl = build_safe_return_url($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF'], $_SERVER['PHP_SELF']);
+
 // 处理表单提交
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
+    $returnUrl = build_safe_return_url($_POST['return_url'] ?? $currentRequestUrl, $_SERVER['PHP_SELF']);
 
     if ($action === 'update_settings') {
         // 验证每日免费次数不得超过每日抽奖限制
@@ -41,7 +90,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         stdmsg("成功", "设置已更新");
 
         // 添加自动刷新，避免static变量缓存问题
-        echo "<meta http-equiv='refresh' content='1;url={$_SERVER['PHP_SELF']}' />";
+        echo "<meta http-equiv='refresh' content='1;url=" . htmlspecialchars($returnUrl, ENT_QUOTES, 'UTF-8') . "' />";
+        exit;
+    }
+
+    if ($action === 'toggle_prize_status' && isset($_POST['prize_id'])) {
+        $prize_id = intval($_POST['prize_id']);
+        $targetStatus = isset($_POST['target_status']) && intval($_POST['target_status']) === 1 ? 1 : 0;
+        $isAjax = is_ajax_request();
+
+        $prizeRes = sql_query("SELECT id, name, probability, is_active FROM plugin_blindbox_prizes WHERE id = $prize_id LIMIT 1");
+        if (!$prizeRes || mysql_num_rows($prizeRes) === 0) {
+            if ($isAjax) {
+                send_json_response([
+                    'success' => false,
+                    'message' => '奖品不存在或已被删除',
+                ], 404);
+            }
+
+            stdmsg("错误", "奖品不存在或已被删除");
+            echo "<meta http-equiv='refresh' content='1;url=" . htmlspecialchars($returnUrl, ENT_QUOTES, 'UTF-8') . "' />";
+            exit;
+        }
+
+        $prize = mysql_fetch_assoc($prizeRes);
+        $currentStatus = intval($prize['is_active']);
+        $actionLabel = $targetStatus ? '启用' : '禁用';
+
+        if ($currentStatus !== $targetStatus && $targetStatus === 1) {
+            $otherProbability = get_single_value("plugin_blindbox_prizes", "COALESCE(SUM(probability), 0)", "WHERE is_active = 1 AND id != $prize_id");
+            $totalProbability = floatval($otherProbability) + floatval($prize['probability']);
+
+            if ($totalProbability > 100) {
+                $errorMessage = "操作失败：启用奖品的概率总和不能超过100%。\n\n当前其他启用奖品概率总和为 " . number_format($otherProbability, 2) . "%\n当前奖品概率为 " . number_format($prize['probability'], 2) . "%\n总和为 " . number_format($totalProbability, 2) . "%";
+                if ($isAjax) {
+                    send_json_response([
+                        'success' => false,
+                        'message' => $errorMessage,
+                    ], 422);
+                }
+
+                echo "<script>alert(" . json_encode($errorMessage, JSON_UNESCAPED_UNICODE) . "); history.back();</script>";
+                exit;
+            }
+        }
+
+        if ($currentStatus !== $targetStatus) {
+            $updateRes = sql_query("UPDATE plugin_blindbox_prizes SET is_active = $targetStatus WHERE id = $prize_id");
+            if (!$updateRes) {
+                $errorMessage = '状态更新失败，请稍后重试';
+                if ($isAjax) {
+                    send_json_response([
+                        'success' => false,
+                        'message' => $errorMessage,
+                    ], 500);
+                }
+
+                stdmsg("错误", $errorMessage);
+                echo "<meta http-equiv='refresh' content='1;url=" . htmlspecialchars($returnUrl, ENT_QUOTES, 'UTF-8') . "' />";
+                exit;
+            }
+        }
+
+        $newStatus = $currentStatus !== $targetStatus ? $targetStatus : $currentStatus;
+        $successMessage = "奖品“" . $prize['name'] . "”已{$actionLabel}";
+
+        if ($isAjax) {
+            send_json_response([
+                'success' => true,
+                'message' => $successMessage,
+                'prize_id' => $prize_id,
+                'is_active' => $newStatus,
+                'button_text' => $newStatus ? '✓ 启用' : '✗ 禁用',
+                'next_target_status' => $newStatus ? 0 : 1,
+                'prize_name' => $prize['name'],
+            ]);
+        }
+
+        stdmsg("成功", "奖品“" . htmlspecialchars($prize['name'], ENT_QUOTES, 'UTF-8') . "”已{$actionLabel}");
+        echo "<meta http-equiv='refresh' content='1;url=" . htmlspecialchars($returnUrl, ENT_QUOTES, 'UTF-8') . "' />";
+        exit;
     }
 
     if ($action === 'update_prize' && isset($_POST['prize_id'])) {
@@ -118,7 +246,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         stdmsg("成功", "奖品已更新");
 
         // 添加自动刷新，避免static变量缓存问题
-        echo "<meta http-equiv='refresh' content='1;url={$_SERVER['PHP_SELF']}' />";
+        echo "<meta http-equiv='refresh' content='1;url=" . htmlspecialchars($returnUrl, ENT_QUOTES, 'UTF-8') . "' />";
+        exit;
     }
 
     if ($action === 'add_prize') {
@@ -194,7 +323,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         stdmsg("成功", "奖品已添加");
 
         // 添加自动刷新，避免static变量缓存问题
-        echo "<meta http-equiv='refresh' content='1;url={$_SERVER['PHP_SELF']}' />";
+        echo "<meta http-equiv='refresh' content='1;url=" . htmlspecialchars($returnUrl, ENT_QUOTES, 'UTF-8') . "' />";
+        exit;
     }
 
     if ($action === 'delete_prize' && isset($_POST['prize_id'])) {
@@ -203,7 +333,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         stdmsg("成功", "奖品已删除");
 
         // 添加自动刷新，避免static变量缓存问题
-        echo "<meta http-equiv='refresh' content='1;url={$_SERVER['PHP_SELF']}' />";
+        echo "<meta http-equiv='refresh' content='1;url=" . htmlspecialchars($returnUrl, ENT_QUOTES, 'UTF-8') . "' />";
+        exit;
     }
 }
 
@@ -633,9 +764,83 @@ echo $header;
 .btn-edit:hover {
     background: #218838;
 }
+
+.status-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: transparent;
+    font-size: 12px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.status-toggle:hover {
+    transform: translateY(-1px);
+}
+
+.status-toggle:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.status-toggle.is-enabled {
+    color: #667eea;
+    background: #e0e7ff;
+    border-color: #667eea;
+}
+
+.status-toggle.is-disabled {
+    color: #dc3545;
+    background: #ffe0e0;
+    border-color: #dc3545;
+}
+
+.modal-content.modal-sm {
+    max-width: 420px;
+}
+
+.modal-message {
+    margin: 0;
+    color: #4a5568;
+    line-height: 1.7;
+}
+
+.status-notice {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1200;
+    min-width: 240px;
+    max-width: 420px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    color: #fff;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.2);
+    display: none;
+}
+
+.status-notice.is-success {
+    background: #2f855a;
+}
+
+.status-notice.is-error {
+    background: #c53030;
+}
+
+.btn[disabled] {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
 </style>
 
 <script>
+var blindboxPrizes = <?php echo json_encode($prizes, JSON_UNESCAPED_UNICODE); ?>;
+var statusNoticeTimer = null;
+
 function togglePrizeFields(prefix = '') {
     var type = document.getElementById(prefix + 'prize_type').value;
     var valueField = document.getElementById(prefix + 'value_field');
@@ -691,11 +896,16 @@ function togglePrizeFields(prefix = '') {
 // 保持筛选条件函数
 function preserveFilters(event) {
     // 表单提交时，确保分页参数被重置为第1页
+    if (!event || !event.target) {
+        return true;
+    }
+
     var pageInput = document.createElement('input');
     pageInput.type = 'hidden';
     pageInput.name = 'page';
     pageInput.value = '1';
     event.target.appendChild(pageInput);
+    return true;
 }
 
 // 弹窗相关函数
@@ -712,8 +922,7 @@ function closeAddModal() {
 
 function openEditModal(prizeId) {
     // 获取奖品数据
-    var prizes = <?php echo json_encode($prizes, JSON_UNESCAPED_UNICODE); ?>;
-    var prize = prizes.find(function(p) { return p.id == prizeId; });
+    var prize = blindboxPrizes.find(function(p) { return p.id == prizeId; });
     
     if (!prize) return;
     
@@ -761,6 +970,138 @@ function closeEditModal() {
     document.body.style.overflow = '';
 }
 
+function showStatusNotice(message, type) {
+    var notice = document.getElementById('blindboxStatusNotice');
+    if (!notice) {
+        return;
+    }
+
+    notice.textContent = message;
+    notice.className = 'status-notice ' + (type === 'error' ? 'is-error' : 'is-success');
+    notice.style.display = 'block';
+
+    if (statusNoticeTimer) {
+        clearTimeout(statusNoticeTimer);
+    }
+
+    statusNoticeTimer = setTimeout(function() {
+        notice.style.display = 'none';
+    }, 2500);
+}
+
+function openStatusConfirmModal(button) {
+    var prizeId = button.getAttribute('data-prize-id');
+    var prizeName = button.getAttribute('data-prize-name') || '';
+    var targetStatus = parseInt(button.getAttribute('data-target-status'), 10) === 1 ? 1 : 0;
+    var actionText = targetStatus === 1 ? '启用' : '禁用';
+    var confirmButton = document.getElementById('statusConfirmSubmit');
+
+    document.getElementById('status_toggle_prize_id').value = prizeId;
+    document.getElementById('status_toggle_target_status').value = String(targetStatus);
+    document.getElementById('status_toggle_ajax').value = '1';
+    document.getElementById('statusConfirmTitle').textContent = actionText + '奖品';
+    document.getElementById('statusConfirmMessage').textContent = '确定要' + actionText + '奖品“' + prizeName + '”吗？';
+    confirmButton.textContent = '确认' + actionText;
+    confirmButton.classList.remove('btn-danger', 'btn-primary');
+    confirmButton.classList.add(targetStatus === 1 ? 'btn-primary' : 'btn-danger');
+
+    document.getElementById('statusConfirmModal').classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeStatusConfirmModal() {
+    document.getElementById('statusConfirmModal').classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+function updatePrizeStatusState(prizeId, isActive, prizeName) {
+    var button = document.querySelector('.status-toggle[data-prize-id="' + prizeId + '"]');
+    if (!button) {
+        return;
+    }
+
+    var nextTargetStatus = isActive ? 0 : 1;
+    button.classList.remove('is-enabled', 'is-disabled');
+    button.classList.add(isActive ? 'is-enabled' : 'is-disabled');
+    button.setAttribute('data-target-status', String(nextTargetStatus));
+    button.setAttribute('data-prize-name', prizeName || button.getAttribute('data-prize-name') || '');
+    button.textContent = isActive ? '✓ 启用' : '✗ 禁用';
+}
+
+function syncPrizeStatusCache(prizeId, isActive, prizeName) {
+    for (var i = 0; i < blindboxPrizes.length; i++) {
+        if (String(blindboxPrizes[i].id) === String(prizeId)) {
+            blindboxPrizes[i].is_active = isActive ? 1 : 0;
+            if (prizeName) {
+                blindboxPrizes[i].name = prizeName;
+            }
+            break;
+        }
+    }
+
+    var editPrizeIdInput = document.getElementById('edit_prize_id');
+    if (editPrizeIdInput && String(editPrizeIdInput.value) === String(prizeId)) {
+        document.getElementById('edit_is_active').value = isActive ? '1' : '0';
+    }
+}
+
+function submitStatusToggle(event) {
+    event.preventDefault();
+
+    var form = event.target;
+    var submitButton = document.getElementById('statusConfirmSubmit');
+    var originalText = submitButton.textContent;
+    var xhr = new XMLHttpRequest();
+    var params = [];
+    var fields = form.querySelectorAll('input');
+
+    for (var i = 0; i < fields.length; i++) {
+        if (!fields[i].name) {
+            continue;
+        }
+        params.push(encodeURIComponent(fields[i].name) + '=' + encodeURIComponent(fields[i].value));
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = '处理中...';
+
+    xhr.open('POST', form.getAttribute('action') || window.location.pathname + window.location.search, true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+    xhr.setRequestHeader('Accept', 'application/json');
+
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState !== 4) {
+            return;
+        }
+
+        submitButton.disabled = false;
+        submitButton.textContent = originalText;
+
+        var response = null;
+        try {
+            response = JSON.parse(xhr.responseText);
+        } catch (error) {
+            response = null;
+        }
+
+        if (xhr.status >= 200 && xhr.status < 300 && response && response.success) {
+            updatePrizeStatusState(response.prize_id, parseInt(response.is_active, 10) === 1, response.prize_name || '');
+            syncPrizeStatusCache(response.prize_id, parseInt(response.is_active, 10) === 1, response.prize_name || '');
+            closeStatusConfirmModal();
+            showStatusNotice(response.message || '状态已更新', 'success');
+            return;
+        }
+
+        var errorMessage = response && response.message ? response.message : '状态更新失败，请稍后重试';
+        showStatusNotice(errorMessage, 'error');
+        alert(errorMessage);
+    };
+
+    xhr.send(params.join('&'));
+    return false;
+}
+
 // 点击遮罩关闭弹窗
 document.addEventListener('click', function(e) {
     if (e.target.classList.contains('modal-overlay')) {
@@ -774,6 +1115,7 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         closeAddModal();
         closeEditModal();
+        closeStatusConfirmModal();
     }
 });
 </script>
@@ -841,6 +1183,7 @@ function pagination($current_page, $total_pages, $base_url, $params = []) {
 ?>
 
 <div class="blindbox-admin">
+    <div id="blindboxStatusNotice" class="status-notice"></div>
     <h1>盲盒插件管理</h1>
 
     <!-- 统计数据 -->
@@ -871,6 +1214,7 @@ function pagination($current_page, $total_pages, $base_url, $params = []) {
         <h2>基础设置</h2>
         <form method="POST" class="settings-form">
             <input type="hidden" name="action" value="update_settings">
+            <input type="hidden" name="return_url" value="<?php echo htmlspecialchars($currentRequestUrl, ENT_QUOTES, 'UTF-8'); ?>">
 
             <div class="form-group">
                 <label>启用盲盒：</label>
@@ -983,17 +1327,23 @@ function pagination($current_page, $total_pages, $base_url, $params = []) {
                     <td><?php echo $prize['given_count']; ?></td>
                     <td><?php echo intval($prize['today_given_count'] ?? 0); ?></td>
                     <td>
-                        <?php if ($prize['is_active']): ?>
-                            <span style="color: #667eea; padding: 2px 5px; background: #e0e7ff; border-radius: 20px; border: 1px solid #667eea;">✓ 启用</span>
-                        <?php else: ?>
-                            <span style="color: #dc3545; padding: 2px 5px; background: #ffe0e0; border-radius: 20px; border: 1px solid #dc3545;">✗ 禁用</span>
-                        <?php endif; ?>
+                        <button
+                            type="button"
+                            class="status-toggle <?php echo $prize['is_active'] ? 'is-enabled' : 'is-disabled'; ?>"
+                            data-prize-id="<?php echo $prize['id']; ?>"
+                            data-prize-name="<?php echo htmlspecialchars($prize['name'], ENT_QUOTES, 'UTF-8'); ?>"
+                            data-target-status="<?php echo $prize['is_active'] ? 0 : 1; ?>"
+                            onclick="openStatusConfirmModal(this)"
+                        >
+                            <?php echo $prize['is_active'] ? '✓ 启用' : '✗ 禁用'; ?>
+                        </button>
                     </td>
                     <td>
                         <button type="button" class="btn btn-primary" onclick="openEditModal(<?php echo $prize['id']; ?>)">编辑</button>
                         <form method="POST" style="display: inline;">
                             <input type="hidden" name="action" value="delete_prize">
                             <input type="hidden" name="prize_id" value="<?php echo $prize['id']; ?>">
+                            <input type="hidden" name="return_url" value="<?php echo htmlspecialchars($currentRequestUrl, ENT_QUOTES, 'UTF-8'); ?>">
                             <button type="submit" class="btn btn-danger" onclick="return confirm('确定删除该奖品？')">删除</button>
                         </form>
                     </td>
@@ -1008,7 +1358,7 @@ function pagination($current_page, $total_pages, $base_url, $params = []) {
         <h2>最近抽奖记录</h2>
 
         <!-- 筛选表单 -->
-        <form method="GET" class="filter-form" onsubmit="preserveFilters()">
+        <form method="GET" class="filter-form" onsubmit="return preserveFilters(event)">
             <div class="form-group">
                 <label>用户：</label>
                 <input type="text" name="filter_user" value="<?php echo htmlspecialchars($filter_user); ?>" placeholder="用户名">
@@ -1096,6 +1446,7 @@ function pagination($current_page, $total_pages, $base_url, $params = []) {
         <form method="POST">
             <div class="modal-body">
                 <input type="hidden" name="action" value="add_prize">
+                <input type="hidden" name="return_url" value="<?php echo htmlspecialchars($currentRequestUrl, ENT_QUOTES, 'UTF-8'); ?>">
 
                 <div class="form-group">
                     <label>奖品名称</label>
@@ -1206,6 +1557,7 @@ function pagination($current_page, $total_pages, $base_url, $params = []) {
             <div class="modal-body">
                 <input type="hidden" name="action" value="update_prize">
                 <input type="hidden" name="prize_id" id="edit_prize_id">
+                <input type="hidden" name="return_url" value="<?php echo htmlspecialchars($currentRequestUrl, ENT_QUOTES, 'UTF-8'); ?>">
 
                 <div class="form-group">
                     <label>奖品名称</label>
@@ -1300,6 +1652,31 @@ function pagination($current_page, $total_pages, $base_url, $params = []) {
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
                 <button type="submit" class="btn btn-primary">保存修改</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 状态切换确认弹窗 -->
+<div id="statusConfirmModal" class="modal-overlay">
+    <div class="modal-content modal-sm">
+        <div class="modal-header">
+            <h3 id="statusConfirmTitle">切换状态</h3>
+            <button type="button" class="modal-close" onclick="closeStatusConfirmModal()">&times;</button>
+        </div>
+        <form method="POST" onsubmit="return submitStatusToggle(event)">
+            <div class="modal-body">
+                <input type="hidden" name="action" value="toggle_prize_status">
+                <input type="hidden" name="prize_id" id="status_toggle_prize_id">
+                <input type="hidden" name="target_status" id="status_toggle_target_status">
+                <input type="hidden" name="ajax" id="status_toggle_ajax" value="1">
+                <input type="hidden" name="return_url" value="<?php echo htmlspecialchars($currentRequestUrl, ENT_QUOTES, 'UTF-8'); ?>">
+
+                <p class="modal-message" id="statusConfirmMessage">确定要变更该奖品状态吗？</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeStatusConfirmModal()">取消</button>
+                <button type="submit" class="btn btn-primary" id="statusConfirmSubmit">确认</button>
             </div>
         </form>
     </div>
