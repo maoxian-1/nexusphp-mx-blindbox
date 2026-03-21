@@ -210,7 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // 获取统计数据
 $stats = [];
 $stats['total_draws'] = get_single_value("plugin_blindbox_history", "COUNT(*)");
-$stats['today_draws'] = get_single_value("plugin_blindbox_history", "COUNT(*)", "WHERE DATE(created_at) = CURDATE()");
+$stats['today_draws'] = get_single_value("plugin_blindbox_history", "COUNT(*)", "WHERE created_at >= CURDATE() AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)");
 $stats['total_users'] = get_single_value("plugin_blindbox_history", "COUNT(DISTINCT user_id)");
 $stats['total_prizes'] = get_single_value("plugin_blindbox_prizes", "COUNT(*)");
 
@@ -250,7 +250,22 @@ $settings['show_on_torrent'] = get_setting('plugin.blindbox.show_on_torrent', 'n
 
 // 获取奖品列表
 $prizes = [];
-$res = sql_query("SELECT * FROM plugin_blindbox_prizes ORDER BY sort_order, id");
+$res = sql_query("
+    SELECT
+        p.*,
+        COALESCE(today_stats.today_given_count, 0) AS today_given_count
+    FROM plugin_blindbox_prizes p
+    LEFT JOIN (
+        SELECT
+            prize_id,
+            COUNT(*) AS today_given_count
+        FROM plugin_blindbox_history
+        WHERE created_at >= CURDATE()
+          AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+        GROUP BY prize_id
+    ) today_stats ON today_stats.prize_id = p.id
+    ORDER BY p.sort_order, p.id
+");
 while ($row = mysql_fetch_assoc($res)) {
     $prizes[] = $row;
 }
@@ -966,7 +981,7 @@ function pagination($current_page, $total_pages, $base_url, $params = []) {
                     <td><?php echo $prize['daily_limit'] ?: '不限'; ?></td>
                     <td><?php echo $prize['total_limit'] ?: '不限'; ?></td>
                     <td><?php echo $prize['given_count']; ?></td>
-                    <td><?php echo $prize['given_today']; ?></td>
+                    <td><?php echo intval($prize['today_given_count'] ?? 0); ?></td>
                     <td>
                         <?php if ($prize['is_active']): ?>
                             <span style="color: #667eea; padding: 2px 5px; background: #e0e7ff; border-radius: 20px; border: 1px solid #667eea;">✓ 启用</span>

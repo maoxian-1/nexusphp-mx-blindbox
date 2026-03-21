@@ -590,8 +590,15 @@ HTML;
     private function getUserDrawsToday($userId)
     {
         // 使用原生SQL查询，避免Facade问题
-        $today = date('Y-m-d');
-        $res = sql_query("SELECT COUNT(*) as total, SUM(CASE WHEN is_free = 1 THEN 1 ELSE 0 END) as free_count FROM plugin_blindbox_history WHERE user_id = " . intval($userId) . " AND DATE(created_at) = '$today'");
+        $res = sql_query("
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN is_free = 1 THEN 1 ELSE 0 END) as free_count
+            FROM plugin_blindbox_history
+            WHERE user_id = " . intval($userId) . "
+              AND created_at >= CURDATE()
+              AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+        ");
         $row = mysql_fetch_assoc($res);
         return [
             'total' => $row ? intval($row['total']) : 0,
