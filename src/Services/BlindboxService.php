@@ -208,7 +208,7 @@ class BlindboxService
                     
                     if ($hasMedal) {
                         // 已有勋章，转换为魔力值
-                        $bonusAmount = $prize->medal_bonus ?: 100;
+                        $bonusAmount = $prize->medal_bonus !== null ? $prize->medal_bonus : 100;
                         $user->seedbonus += $bonusAmount;
                         $user->save();
                         $this->sendNotification($user->id, "您已拥有勋章【{$prize->name}】，已转换为 {$bonusAmount} 魔力值！");

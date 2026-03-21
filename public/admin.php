@@ -48,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $prize_id = intval($_POST['prize_id']);
         $newProbability = floatval($_POST['probability']);
         $newIsActive = $_POST['is_active'] ? 1 : 0;
+        $newType = $_POST['type'] ?? '';
 
         // 校验概率总和是否超过100%
         // 计算其他启用奖品的概率总和（排除当前编辑的奖品）
@@ -59,38 +60,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        // 获取奖品类型
-        $prize_type_res = sql_query("SELECT type FROM plugin_blindbox_prizes WHERE id = $prize_id");
-        $prize_type_row = mysql_fetch_assoc($prize_type_res);
-        $prize_type = $prize_type_row['type'];
-
-        // 如果是上传量类型，将GB转换为字节
-        $value = floatval($_POST['value']);
-        if ($prize_type === 'upload') {
-            $value = $value * 1073741824; // GB转字节
-        }
-
-        // 处理随机范围值（仅对魔力值和上传量生效）
+        // 根据提交后的类型处理奖品值，确保编辑时勋章配置也会被保存
+        $value = 0;
+        $medal_id = null;
+        $medal_bonus = null;
         $value_min = null;
         $value_max = null;
-        if (in_array($prize_type, ['bonus', 'upload'])) {
+
+        if ($newType === 'medal') {
+            $medal_id = intval($_POST['medal_id'] ?? 0);
+            $value = $medal_id;
+            $medal_bonus = intval($_POST['medal_bonus'] ?? 100);
+        } elseif ($newType === 'upload') {
+            $value = floatval($_POST['value']) * 1073741824;
             if (!empty($_POST['value_min']) && !empty($_POST['value_max'])) {
                 $value_min = floatval($_POST['value_min']);
                 $value_max = floatval($_POST['value_max']);
-                if ($prize_type === 'upload') {
-                    $value_min = $value_min * 1073741824;
-                    $value_max = $value_max * 1073741824;
-                }
+                $value_min = $value_min * 1073741824;
+                $value_max = $value_max * 1073741824;
             }
+        } elseif ($newType === 'bonus') {
+            $value = floatval($_POST['value']);
+            if (!empty($_POST['value_min']) && !empty($_POST['value_max'])) {
+                $value_min = intval($_POST['value_min']);
+                $value_max = intval($_POST['value_max']);
+            }
+        } else {
+            $value = floatval($_POST['value']);
         }
 
         $updates = [
             'name' => sqlesc($_POST['name']),
             'description' => sqlesc($_POST['description']),
+            'type' => sqlesc($newType),
             'probability' => sqlesc(floatval($_POST['probability'])),
             'value' => sqlesc($value),
             'value_min' => $value_min !== null ? sqlesc($value_min) : 'NULL',
             'value_max' => $value_max !== null ? sqlesc($value_max) : 'NULL',
+            'medal_id' => $medal_id !== null ? intval($medal_id) : 'NULL',
+            'medal_bonus' => $medal_bonus !== null ? intval($medal_bonus) : 'NULL',
             'daily_limit' => intval($_POST['daily_limit']),
             'total_limit' => intval($_POST['total_limit']),
             'is_active' => $_POST['is_active'] ? 1 : 0,

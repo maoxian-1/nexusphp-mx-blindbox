@@ -156,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'draw') {
                 $hasMedal = get_single_value("user_medals", "COUNT(*)", "WHERE uid = " . $CURUSER['id'] . " AND medal_id = " . $selectedPrize['medal_id']);
                 if ($hasMedal) {
                     // 转换为魔力值
-                    $bonusAmount = $selectedPrize['medal_bonus'] ?: 100;
+                    $bonusAmount = ($selectedPrize['medal_bonus'] !== null && $selectedPrize['medal_bonus'] !== '') ? $selectedPrize['medal_bonus'] : 100;
                     sql_query("UPDATE users SET seedbonus = seedbonus + $bonusAmount WHERE id = " . $CURUSER['id']);
                     $medalConverted = true;
                     $medalConvertedBonus = $bonusAmount;
