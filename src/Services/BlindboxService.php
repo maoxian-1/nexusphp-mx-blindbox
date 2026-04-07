@@ -110,7 +110,7 @@ class BlindboxService
         $freeDrawsToday = DB::table('plugin_blindbox_history')
             ->where('user_id', $userId)
             ->where('is_free', 1)
-            ->whereDate('created_at', today())
+            ->whereRaw('created_at >= CURDATE() AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)')
             ->count();
 
         $dailyFreeTimes = intval(Setting::get('plugin.blindbox.daily_free_times', '1'));
@@ -123,17 +123,27 @@ class BlindboxService
      */
     private function getActivePrizes()
     {
-        return DB::table('plugin_blindbox_prizes')
-            ->where('is_active', true)
+        $todayPrizeStats = DB::table('plugin_blindbox_history')
+            ->select('prize_id', DB::raw('COUNT(*) as today_given_count'))
+            ->whereRaw('created_at >= CURDATE() AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)')
+            ->groupBy('prize_id');
+
+        return DB::table('plugin_blindbox_prizes as prizes')
+            ->leftJoinSub($todayPrizeStats, 'today_stats', function ($join) {
+                $join->on('today_stats.prize_id', '=', 'prizes.id');
+            })
+            ->select('prizes.*', DB::raw('COALESCE(today_stats.today_given_count, 0) as today_given_count'))
+            ->where('prizes.is_active', true)
             ->where(function ($query) {
-                $query->where('daily_limit', 0)
-                    ->orWhere('given_today', '<', DB::raw('daily_limit'));
+                $query->where('prizes.daily_limit', 0)
+                    ->orWhereRaw('COALESCE(today_stats.today_given_count, 0) < prizes.daily_limit');
             })
             ->where(function ($query) {
-                $query->where('total_limit', 0)
-                    ->orWhere('given_count', '<', DB::raw('total_limit'));
+                $query->where('prizes.total_limit', 0)
+                    ->orWhereRaw('prizes.given_count < prizes.total_limit');
             })
-            ->orderBy('sort_order')
+            ->orderBy('prizes.sort_order')
+            ->orderBy('prizes.id')
             ->get();
     }
 
@@ -208,7 +218,7 @@ class BlindboxService
                     
                     if ($hasMedal) {
                         // 已有勋章，转换为魔力值
-                        $bonusAmount = $prize->medal_bonus ?: 100;
+                        $bonusAmount = $prize->medal_bonus !== null ? $prize->medal_bonus : 100;
                         $user->seedbonus += $bonusAmount;
                         $user->save();
                         $this->sendNotification($user->id, "您已拥有勋章【{$prize->name}】，已转换为 {$bonusAmount} 魔力值！");
@@ -226,8 +236,6 @@ class BlindboxService
                 $this->giveRainbowId($user, $days);
                 $this->sendNotification($user->id, "恭喜您获得 {$days} 天彩虹ID特权！");
                 break;
-        }
-    }
         }
     }
 

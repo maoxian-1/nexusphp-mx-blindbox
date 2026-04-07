@@ -33,8 +33,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'draw') {
     $isFree = $input['is_free'] ?? false;
 
     // 获取今日抽奖次数
-    $today = date('Y-m-d');
-    $res = sql_query("SELECT COUNT(*) as total, SUM(CASE WHEN is_free = 1 THEN 1 ELSE 0 END) as free_count FROM plugin_blindbox_history WHERE user_id = " . $CURUSER['id'] . " AND DATE(created_at) = '$today'");
+    $res = sql_query("
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN is_free = 1 THEN 1 ELSE 0 END) as free_count
+        FROM plugin_blindbox_history
+        WHERE user_id = " . intval($CURUSER['id']) . "
+          AND created_at >= CURDATE()
+          AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+    ");
     $row = mysql_fetch_assoc($res);
     $todayTotal = $row ? intval($row['total']) : 0;
     $todayFreeUsed = $row ? intval($row['free_count']) : 0;
@@ -65,9 +72,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'draw') {
 
     // 执行抽奖 - 根据概率选择奖品
     // 排除已达到限量的奖品：
-    // 1. daily_limit > 0 且 given_today >= daily_limit 的奖品（今日已达限量）
+    // 1. daily_limit > 0 且今日历史记录数 >= daily_limit 的奖品（今日已达限量）
     // 2. total_limit > 0 且 given_count >= total_limit 的奖品（总数已达限量）
-    $prizes = sql_query("SELECT * FROM plugin_blindbox_prizes WHERE is_active = 1 AND (daily_limit = 0 OR given_today < daily_limit) AND (total_limit = 0 OR given_count < total_limit)");
+    $prizes = sql_query("
+        SELECT
+            p.*,
+            COALESCE(today_stats.today_given_count, 0) AS today_given_count
+        FROM plugin_blindbox_prizes p
+        LEFT JOIN (
+            SELECT
+                prize_id,
+                COUNT(*) AS today_given_count
+            FROM plugin_blindbox_history
+            WHERE created_at >= CURDATE()
+              AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+            GROUP BY prize_id
+        ) today_stats ON today_stats.prize_id = p.id
+        WHERE p.is_active = 1
+          AND (p.daily_limit = 0 OR COALESCE(today_stats.today_given_count, 0) < p.daily_limit)
+          AND (p.total_limit = 0 OR p.given_count < p.total_limit)
+        ORDER BY p.sort_order, p.id
+    ");
     $prizeList = [];
     $totalWeight = 0;
 
@@ -156,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'draw') {
                 $hasMedal = get_single_value("user_medals", "COUNT(*)", "WHERE uid = " . $CURUSER['id'] . " AND medal_id = " . $selectedPrize['medal_id']);
                 if ($hasMedal) {
                     // 转换为魔力值
-                    $bonusAmount = $selectedPrize['medal_bonus'] ?: 100;
+                    $bonusAmount = ($selectedPrize['medal_bonus'] !== null && $selectedPrize['medal_bonus'] !== '') ? $selectedPrize['medal_bonus'] : 100;
                     sql_query("UPDATE users SET seedbonus = seedbonus + $bonusAmount WHERE id = " . $CURUSER['id']);
                     $medalConverted = true;
                     $medalConvertedBonus = $bonusAmount;

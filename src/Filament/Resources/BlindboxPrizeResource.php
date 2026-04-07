@@ -12,6 +12,7 @@ use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Tabs;
 use Filament\Forms\Get;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use NexusPlugin\Blindbox\Models\BlindboxPrize;
 
 class BlindboxPrizeResource extends Resource
@@ -204,7 +205,7 @@ class BlindboxPrizeResource extends Resource
                                             
                                         Forms\Components\Placeholder::make('given_today_display')
                                             ->label('今日发放')
-                                            ->content(fn ($record) => $record?->given_today ?? 0),
+                                            ->content(fn ($record) => $record?->today_given_count ?? 0),
                                             
                                         Forms\Components\Placeholder::make('created_at_display')
                                             ->label('创建时间')
@@ -286,9 +287,9 @@ class BlindboxPrizeResource extends Resource
                     ->label('已发放')
                     ->sortable(),
                     
-                Tables\Columns\TextColumn::make('given_today')
+                Tables\Columns\TextColumn::make('today_given_count')
                     ->label('今日')
-                    ->sortable(),
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('today_given_count', $direction)),
                     
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('状态')
@@ -352,6 +353,20 @@ class BlindboxPrizeResource extends Resource
         return [
             //
         ];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $todayPrizeStats = DB::table('plugin_blindbox_history')
+            ->select('prize_id', DB::raw('COUNT(*) as today_given_count'))
+            ->whereRaw('created_at >= CURDATE() AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)')
+            ->groupBy('prize_id');
+
+        return parent::getEloquentQuery()
+            ->leftJoinSub($todayPrizeStats, 'today_stats', function ($join) {
+                $join->on('today_stats.prize_id', '=', 'plugin_blindbox_prizes.id');
+            })
+            ->select('plugin_blindbox_prizes.*', DB::raw('COALESCE(today_stats.today_given_count, 0) as today_given_count'));
     }
     
     public static function getPages(): array

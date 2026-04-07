@@ -77,21 +77,6 @@ class ListBlindboxPrizes extends ListRecords
                         ->success()
                         ->send();
                 }),
-                
-            Actions\Action::make('reset_daily')
-                ->label('重置今日统计')
-                ->icon('heroicon-o-arrow-path')
-                ->color('warning')
-                ->requiresConfirmation()
-                ->modalHeading('重置今日统计')
-                ->modalDescription('确定要重置所有奖品的今日发放数量吗？此操作不可撤销。')
-                ->action(function () {
-                    BlindboxPrize::query()->update(['given_today' => 0]);
-                    Notification::make()
-                        ->title('今日统计已重置')
-                        ->success()
-                        ->send();
-                }),
         ];
     }
 }
@@ -107,7 +92,7 @@ class BlindboxStatsWidget extends StatsOverviewWidget
     {
         $totalDraws = DB::table('plugin_blindbox_history')->count();
         $todayDraws = DB::table('plugin_blindbox_history')
-            ->whereDate('created_at', today())
+            ->whereRaw('created_at >= CURDATE() AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)')
             ->count();
         $totalUsers = DB::table('plugin_blindbox_history')
             ->distinct('user_id')
