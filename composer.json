@@ -2,7 +2,7 @@
     "name": "maoxian/nexusphp-mx-blindbox",
     "description": "Blind box lottery plugin for NexusPHP",
     "type": "library",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "autoload": {
         "psr-4": {
             "NexusPlugin\\Blindbox\\": "src/"
